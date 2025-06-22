@@ -15,7 +15,7 @@ Parameters: name, type, url
 '''
 playlists = [
                 ("Everyday Carry", "video", "https://www.youtube.com/playlist?list=PL482FF54BFAF7A5E5"),
-                ("Google Voice", "audio", "https://www.youtube.com/playlist?list=PL59FEE129ADFF2B12"),
+                ("Google Voice", "video", "https://www.youtube.com/playlist?list=PL59FEE129ADFF2B12"),
                 ("Pro Performances Analyzed", "video", "https://www.youtube.com/playlist?list=PLfwtcDG7LpxHo35SSUfWwZnd9SJWM07TD"),
                 ("Sam's Music", "audio", "https://www.youtube.com/playlist?list=PLAu7TMBkOIfxKcZBFpLHZvE8pAt8orKRN"),
             ]
