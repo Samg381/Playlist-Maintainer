@@ -20,6 +20,7 @@ playlists = [
                 ("Sam's Music", "audio", "https://www.youtube.com/playlist?list=PLAu7TMBkOIfxKcZBFpLHZvE8pAt8orKRN"),
             ]
 
+
 # Path to yt-dlp application. Absolute pathing recommended for cron-friendlienss.
 yt_dlp_path = "/usr/local/bin/yt-dlp"
 
@@ -28,7 +29,13 @@ yt_dlp_path = "/usr/local/bin/yt-dlp"
 destination_root_directory = "/mnt/SYNOLOGY-JUNK-RAID/YouTube Backups/"
 
 
+# OPTIONAL: save dummy files in download directory to visually mark deleted/private/unlisted videos
+write_unavailable_videos = True
 
+
+# OPTIONAL: use cookies to access Liked Videos / private / unlisted playlists
+# If enabled, the script will look for 'cookies.txt' in the same directory of the script
+use_cookies = True
 
 
 
@@ -62,7 +69,7 @@ def is_valid_dirname(name: str) -> bool:
 
 time = datetime.now(ZoneInfo("localtime"))
 
-logging.info(f"=== {time.strftime('%-m/%-d/%Y %-I:%M %p')} ===")
+logging.info(f"==================== {time.strftime('%-m/%-d/%Y %-I:%M %p')} ====================")
 
 logging.info(f"Initializing")
 
@@ -99,6 +106,7 @@ for i, playlist in enumerate(playlists):
         logging.info(f"Created '{destination_dir}'")
 
     command = []
+    cookies_flag = ["--cookies", "cookies.txt"] if use_cookies else []
 
     logging.info(f"Scanning playlist {i} \"{playlist_name}\"")
 
@@ -112,7 +120,8 @@ for i, playlist in enumerate(playlists):
                 "--output", "%(playlist_index)03d - %(title).100s.%(ext)s",
                 "--format", "bestvideo+bestaudio/best",
                 "--merge-output-format", "mkv",
-                "--quiet",
+                #"--quiet",
+                *cookies_flag,
                 playlist_url
             ]
         case "audio":
@@ -128,17 +137,53 @@ for i, playlist in enumerate(playlists):
                 "--audio-quality", "0",
                 "--embed-metadata",
                 "--embed-thumbnail",
-                "--quiet",
+                #"--quiet",
+                *cookies_flag,
                 playlist_url
             ]
         case _:
             logging.fatal(f"Invalid playlist type '{playlist_type}' provided. Options are 'video' or 'audio'. Terminating.")
             quit(1)           
 
-    with open(log_file, "a") as log:
-        subprocess.run(command, stdout=log, stderr=log)
+    
+    # This is where we call subprocess to run yt-dlp. We need to wrap this in it's own logfile, which is only needed for appending to the logging output.
+    with open(log_file, "a", encoding="utf-8") as log:
 
-    logging.info(f"Scanning playlist {i} \"{playlist_name}\" complete.")
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+
+        if process.stdout is not None:
+            for line in process.stdout:
+                
+                # Remove whitespace
+                line = line.rstrip()
+                
+                # Break line up into space separated chunks
+                split = line.rsplit(" ")
+
+                # Handle output
+                if "ERROR" in split[0]:
+                    id = split[2].rstrip(':')
+                    logging.info(f"    Video ID {id} is unavailable")
+
+                    if write_unavailable_videos:
+
+                        dummy_file = destination_dir + "/" + str(i) + " - UNAVAILABLE VIDEO ID " + id
+
+                        with open(dummy_file, "w") as file:
+                            file.write(line)
+
+                elif "archive" in split[-1]:
+                    id = split[2].rstrip(':')
+                    logging.info(f"    Video ID {id} already downloaded")
+
+                #else:
+                    #print(f"    {line}")                    # Console output
+                    #log.write("    " + line + "\n")         # File output
+        
+        process.wait()
+
+
+    logging.info(f"Scanning playlist complete.")
 
 
 logging.info(f"Finished.\n")
