@@ -1,6 +1,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 import subprocess
+import platform
 import logging
 import os
 
@@ -13,10 +14,10 @@ Parameters: name, type, url
     type: (video|audio) - determines whether video (.mkv) or just audio (.mp3) will be downloaded.
     url: URL to playlist - note this is NOT a url to a video in the playlist, but a URL to the playlist itself.
 '''
+
 playlists = [
                 ("Everyday Carry", "video", "https://www.youtube.com/playlist?list=PL482FF54BFAF7A5E5"),
                 ("Google Voice", "video", "https://www.youtube.com/playlist?list=PL59FEE129ADFF2B12"),
-                ("Pro Performances Analyzed", "video", "https://www.youtube.com/playlist?list=PLfwtcDG7LpxHo35SSUfWwZnd9SJWM07TD"),
                 ("Sam's Music", "audio", "https://www.youtube.com/playlist?list=PLAu7TMBkOIfxKcZBFpLHZvE8pAt8orKRN"),
             ]
 
@@ -31,6 +32,10 @@ destination_root_directory = "/mnt/SYNOLOGY-JUNK-RAID/YouTube Backups/"
 
 # OPTIONAL: save dummy files in download directory to visually mark deleted/private/unlisted videos
 write_unavailable_videos = True
+# OPTIONAL: if write_unavailable_videos is enabled, the dummy file will be a shortcut to quiteaplaylist.com (video recovery tool)
+write_shortcut = True
+# OPTIONAL: if write_shortcut and write_unavailable_videos are enabled, specify the OS (Windows|Linux) to determine the type of web shortcut that is created.
+end_user_os = "Windows"
 
 
 # OPTIONAL: use cookies to access Liked Videos / private / unlisted playlists
@@ -83,7 +88,7 @@ if not os.path.exists(destination_root_directory):
 
 logging.info(f"Initialization success!")
 
-logging.info(f"Initiating scan for {len(playlists)} playlists.")
+logging.info(f"Initiating maintenance for {len(playlists)} playlists.")
 
 
 
@@ -108,7 +113,7 @@ for i, playlist in enumerate(playlists):
     command = []
     cookies_flag = ["--cookies", "cookies.txt"] if use_cookies else []
 
-    logging.info(f"Scanning playlist {i} \"{playlist_name}\"")
+    logging.info(f"Scanning playlist {i+1} \"{playlist_name}\"")
 
     match playlist_type:
         case "video":
@@ -117,7 +122,7 @@ for i, playlist in enumerate(playlists):
                 "-P", destination_dir,
                 "--ignore-errors",
                 "--download-archive", archive_file,
-                "--output", "%(playlist_index)03d - %(title).100s.%(ext)s",
+                "--output", "%(playlist_index)d - %(title).100s.%(ext)s",
                 "--format", "bestvideo+bestaudio/best",
                 "--merge-output-format", "mkv",
                 #"--quiet",
@@ -130,7 +135,7 @@ for i, playlist in enumerate(playlists):
                 "-P", destination_dir,
                 "--ignore-errors",
                 "--download-archive", archive_file,
-                "--output", "%(playlist_index)03d - %(title).100s.%(ext)s",
+                "--output", "%(playlist_index)d - %(title).100s.%(ext)s",
                 "--format", "bestaudio/best",
                 "--extract-audio",
                 "--audio-format", "mp3",
@@ -151,7 +156,11 @@ for i, playlist in enumerate(playlists):
 
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
 
+        current_video_number = 0
+        total_videos_in_playlist = 0
+
         if process.stdout is not None:
+
             for line in process.stdout:
                 
                 # Remove whitespace
@@ -160,30 +169,72 @@ for i, playlist in enumerate(playlists):
                 # Break line up into space separated chunks
                 split = line.rsplit(" ")
 
+                # Fetch current video number
+                if "[download]" in split[0]:
+
+                    if "100%" in split[1]:
+                        logging.info(f"    Video {current_video_number} download complete")
+
+                    if "Downloading" in split[1] and "item" in split[2]:
+                        current_video_number = int(split[3])
+                        total_videos_in_playlist = int(split[5])
+
                 # Handle output
-                if "ERROR" in split[0]:
+                elif "ERROR" in split[0]:
+
                     id = split[2].rstrip(':')
+
                     logging.info(f"    Video ID {id} is unavailable")
 
+                    # If user wants a dummy file to be placed in download directory indicating a missing video
                     if write_unavailable_videos:
 
-                        dummy_file = destination_dir + "/" + str(i) + " - UNAVAILABLE VIDEO ID " + id
+                        #dummy_file = destination_dir + "/" + str(current_video_number) + " - Unavailable video - " + id
+                        filename = f"{current_video_number} - Unavailable video - {id}"
+                        file_path = os.path.join(destination_dir, filename)
 
-                        with open(dummy_file, "w") as file:
-                            file.write(line)
+                        # If user wants a clickable shortcut to video recovery tool or not
+                        if write_shortcut:
+
+                            # Construct the URL to quiteaplaylist
+                            search_url = f"https://quiteaplaylist.com/search?url=https://www.youtube.com/watch?v={id}"
+                            
+                            # Create a shortcut file depending on OS
+                            if end_user_os == "Windows":
+                                file_path += ".url"
+                                with open(file_path, "w") as f:
+                                    f.write(f"[InternetShortcut]\nURL={search_url}\n")
+                            else:
+                                file_path += ".desktop"
+                                with open(file_path, "w") as f:
+                                    f.write(
+                                        f"""[Desktop Entry]
+                                            Type=Link
+                                            Name={filename}
+                                            URL={search_url}
+                                            Icon=text-html
+                                            """
+                                            )
+                                os.chmod(file_path, 0o755)  # Make it executable (some Linux desktops require this)
+
+                        else:
+
+                            with open(file_path, "w") as file:
+                                file.write(line) # Write the yt-dlp output
+
 
                 elif "archive" in split[-1]:
-                    id = split[2].rstrip(':')
+                    id = split[1].rstrip(':')
                     logging.info(f"    Video ID {id} already downloaded")
 
                 #else:
-                    #print(f"    {line}")                    # Console output
-                    #log.write("    " + line + "\n")         # File output
+                # print(f"    {line}")                    # Console output
+                # log.write("    " + line + "\n")         # File output
         
         process.wait()
 
 
-    logging.info(f"Scanning playlist complete.")
+    logging.info(f"Playlist maintenance complete.")
 
 
 logging.info(f"Finished.\n")
