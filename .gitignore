@@ -3,3 +3,5 @@
 /crontab.log
 /playlist-maintainer.sh
 cookies.txt
+cookies-removethistexttoenable.txt
+cron.log
