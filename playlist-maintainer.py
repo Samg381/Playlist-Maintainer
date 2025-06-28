@@ -18,8 +18,9 @@ Parameters: name, type, url
 playlists = [
                 ("Everyday Carry", "video", "https://www.youtube.com/playlist?list=PL482FF54BFAF7A5E5"),
                 ("Google Voice", "video", "https://www.youtube.com/playlist?list=PL59FEE129ADFF2B12"),
-                ("Sam's Music", "audio", "https://www.youtube.com/playlist?list=PLAu7TMBkOIfxKcZBFpLHZvE8pAt8orKRN"),
+                ("Music with Friends", "audio", "https://www.youtube.com/playlist?list=PLAu7TMBkOIfxKcZBFpLHZvE8pAt8orKRN"),
             ]
+
 
 
 # Path to yt-dlp application. Absolute pathing recommended for cron-friendlienss.
@@ -38,9 +39,14 @@ write_shortcut = True
 end_user_os = "Windows"
 
 
-# OPTIONAL: use cookies to access Liked Videos / private / unlisted playlists
+# OPTIONAL: use cookies (an account) to access Liked Videos / private / unlisted playlists
 # If enabled, the script will look for 'cookies.txt' in the same directory of the script
 use_cookies = True
+
+# OPTIONAL: delay (seconds) between downloads
+# VERY IMPORTANT if use_cookies is enabled. Too many downloads can cause a very severe, unfixable account block that can take months to disappear, if it does at all.
+# This is the error you can expect if you ignore this: https://www.reddit.com/r/youtube/comments/1f4n18h/video_unavailable_this_content_isnt_available/
+interdownload_delay = True
 
 
 
@@ -79,16 +85,19 @@ logging.info(f"==================== {time.strftime('%-m/%-d/%Y %-I:%M %p')} ====
 logging.info(f"Initializing")
 
 if not os.path.exists(yt_dlp_path):
-    logging.fatal(f"[Fatal] yt-dlp not found in '{yt_dlp_path}' - please verify it exists.")
+    logging.fatal(f"yt-dlp not found in '{yt_dlp_path}' - please verify it exists.")
     quit(1)
 
 if not os.path.exists(destination_root_directory):
-    logging.fatal(f"[Fatal] could not find requested download directory '{destination_root_directory}'")
+    logging.fatal(f"could not find requested download directory '{destination_root_directory}'")
     quit(1)
 
 logging.info(f"Initialization success!")
 
 logging.info(f"Initiating maintenance for {len(playlists)} playlists.")
+
+if use_cookies and not interdownload_delay:
+    logging.warning(f"You have opted to use cookies WITHOUT enabling interdownload_delay! \nYou may face a ban if the playlist is too long!")
 
 
 
@@ -98,23 +107,36 @@ for i, playlist in enumerate(playlists):
     playlist_type = playlist[1]
     playlist_url = playlist[2]
 
+    logging.info(f"Scanning playlist {i+1} \"{playlist_name}\"")
+
     if not is_valid_dirname(playlist_name):
-        logging.fatal(f"Invalid playlist name: '{playlist_name}' contains illegal characters: {INVALID_CHARS}")
+        logging.fatal(f"    Invalid playlist name: '{playlist_name}' contains illegal characters: {INVALID_CHARS}")
         quit(1)
 
     destination_dir = destination_root_directory + playlist_name
     archive_file = destination_dir + "/downloaded.txt"
 
     if not os.path.exists(destination_dir):
-        logging.warning(f"Directory for '{playlist_name}' does not exist.")
+        logging.warning(f"  Directory for '{playlist_name}' does not exist.")
         os.makedirs(destination_dir)
-        logging.info(f"Created '{destination_dir}'")
+        logging.info(f"    Created '{destination_dir}'")
 
     command = []
+
+
+    # Flag patchout
     cookies_flag = ["--cookies", "cookies.txt"] if use_cookies else []
 
-    logging.info(f"Scanning playlist {i+1} \"{playlist_name}\"")
+    sleep_flags = [
+        "--sleep-requests", "3",            # Pause 3 seconds between each request (e.g., metadata/API calls)
+        "--min-sleep-interval", "60",       # Wait at least 10 seconds between downloading individual videos
+        "--max-sleep-interval", "120",      # Wait up to 90 seconds between videos (randomized with min)
+        "--limit-rate", "1M",               # Limit download speed to 1 MiB/s to reduce bandwidth burst
+        "--retry-sleep", "fragment:300",    # If a video fragment fails, sleep 5 minutes before retrying
+    ] if interdownload_delay else []
 
+
+    # Generate yt-dlp command
     match playlist_type:
         case "video":
             command = [
@@ -122,11 +144,13 @@ for i, playlist in enumerate(playlists):
                 "-P", destination_dir,
                 "--ignore-errors",
                 "--download-archive", archive_file,
-                "--output", "%(playlist_index)d - %(title).100s.%(ext)s",
+                "--output", "%(title).100s.%(ext)s",
                 "--format", "bestvideo+bestaudio/best",
-                "--merge-output-format", "mkv",
-                #"--quiet",
+                "--merge-output-format", "mp4",
+                "--no-mtime", # Ensure OS file modification date reflects download time
+                "--sleep-interval", interdownload_delay,
                 *cookies_flag,
+                *sleep_flags,
                 playlist_url
             ]
         case "audio":
@@ -135,19 +159,21 @@ for i, playlist in enumerate(playlists):
                 "-P", destination_dir,
                 "--ignore-errors",
                 "--download-archive", archive_file,
-                "--output", "%(playlist_index)d - %(title).100s.%(ext)s",
+                "--output", "%(title).100s.%(ext)s",
                 "--format", "bestaudio/best",
                 "--extract-audio",
                 "--audio-format", "mp3",
                 "--audio-quality", "0",
                 "--embed-metadata",
                 "--embed-thumbnail",
-                #"--quiet",
+                "--no-mtime", # Ensure OS file modification date reflects download time 
+                "--sleep-interval", interdownload_delay,
                 *cookies_flag,
+                *sleep_flags,
                 playlist_url
             ]
         case _:
-            logging.fatal(f"Invalid playlist type '{playlist_type}' provided. Options are 'video' or 'audio'. Terminating.")
+            logging.fatal(f"    Invalid playlist type '{playlist_type}' provided. Options are 'video' or 'audio'. Terminating.")
             quit(1)           
 
     
