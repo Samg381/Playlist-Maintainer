@@ -1,4 +1,5 @@
 from datetime import datetime
+from genericpath import isfile
 from zoneinfo import ZoneInfo
 import subprocess
 import platform
@@ -38,14 +39,13 @@ write_shortcut = True
 # OPTIONAL: if write_shortcut and write_unavailable_videos are enabled, specify the OS (Windows|Linux) to determine the type of web shortcut that is created.
 end_user_os = "Windows"
 
-
 # OPTIONAL: use cookies (an account) to access Liked Videos / private / unlisted playlists
 # If enabled, the script will look for 'cookies.txt' in the same directory of the script
-use_cookies = True
+use_cookies = False
 
-# OPTIONAL: (recommended if use_cookies enabled) - add a randomized delay between downloads / API hits, and throttle bandwidth, to reduce liklihood of youtube ban
+# OPTIONAL: (recommended, especially if use_cookies enabled) - add a delay between downloads / API hits, and throttle bandwidth, to reduce liklihood of youtube ban
 # VERY IMPORTANT if use_cookies is enabled. Too many downloads can cause a very severe, unfixable account block that can take months to disappear, if it does at all.
-# This is the error you can expect if you ignore this: https://www.reddit.com/r/youtube/comments/1f4n18h/video_unavailable_this_content_isnt_available/
+# This is the ban you can expect if you ignore this: https://www.reddit.com/r/youtube/comments/1f4n18h/video_unavailable_this_content_isnt_available/
 interdownload_delay = True
 
 
@@ -94,10 +94,12 @@ if not os.path.exists(destination_root_directory):
 
 logging.info(f"Initialization success!")
 
-logging.info(f"Initiating maintenance for {len(playlists)} playlists.")
+logging.info(f"Use cookies: {use_cookies} | Inter-download delay: {interdownload_delay}")
 
 if use_cookies and not interdownload_delay:
     logging.warning(f"You have opted to use cookies WITHOUT enabling interdownload_delay! \nYou may face a ban if the playlist is too long!")
+
+logging.info(f"Initiating maintenance for {len(playlists)} playlists.")
 
 
 
@@ -119,7 +121,7 @@ for i, playlist in enumerate(playlists):
     if not os.path.exists(destination_dir):
         logging.warning(f"  Directory for '{playlist_name}' does not exist.")
         os.makedirs(destination_dir)
-        logging.info(f"    Created '{destination_dir}'")
+        logging.info(f"  Created '{destination_dir}'")
 
     command = []
 
@@ -132,7 +134,7 @@ for i, playlist in enumerate(playlists):
         "--min-sleep-interval", "60",       # Wait at least 10 seconds between downloading individual videos
         "--max-sleep-interval", "120",      # Wait up to 90 seconds between videos (randomized with min)
         "--limit-rate", "1M",               # Limit download speed to 1 MiB/s to reduce bandwidth burst
-        "--retry-sleep", "fragment:300",    # If a video fragment fails, sleep 5 minutes before retrying
+        "--retry-sleep", "fragment:300"     # If a video fragment fails, sleep 5 minutes before retrying
     ] if interdownload_delay else []
 
 
@@ -144,11 +146,12 @@ for i, playlist in enumerate(playlists):
                 "-P", destination_dir,
                 "--ignore-errors",
                 "--download-archive", archive_file,
-                "--output", "%(title).100s.%(ext)s",
+                #"--output", "%(title).100s.%(ext)s",
+                "--output", "%(playlist_count+1-playlist_index)d - %(title).100s.%(ext)s",
                 "--format", "bestvideo+bestaudio/best",
                 "--merge-output-format", "mp4",
+                "--playlist-reverse", # Downloads the oldest videos first (trick to get file browser sort-by date to show playlist order in YouTube)
                 "--no-mtime", # Ensure OS file modification date reflects download time
-                "--sleep-interval", interdownload_delay,
                 *cookies_flag,
                 *sleep_flags,
                 playlist_url
@@ -159,15 +162,16 @@ for i, playlist in enumerate(playlists):
                 "-P", destination_dir,
                 "--ignore-errors",
                 "--download-archive", archive_file,
-                "--output", "%(title).100s.%(ext)s",
+                # "--output", "%(title).100s.%(ext)s",
+                "--output", "%(playlist_count+1-playlist_index)d - %(title).100s.%(ext)s",
                 "--format", "bestaudio/best",
                 "--extract-audio",
                 "--audio-format", "mp3",
                 "--audio-quality", "0",
                 "--embed-metadata",
                 "--embed-thumbnail",
+                "--playlist-reverse", # Downloads the oldest videos first (trick to get file browser sort-by date to show playlist order in YouTube)
                 "--no-mtime", # Ensure OS file modification date reflects download time 
-                "--sleep-interval", interdownload_delay,
                 *cookies_flag,
                 *sleep_flags,
                 playlist_url
@@ -210,14 +214,19 @@ for i, playlist in enumerate(playlists):
 
                     id = split[2].rstrip(':')
 
-                    logging.info(f"    Video ID {id} is unavailable")
-
                     # If user wants a dummy file to be placed in download directory indicating a missing video
                     if write_unavailable_videos:
 
                         #dummy_file = destination_dir + "/" + str(current_video_number) + " - Unavailable video - " + id
                         filename = f"{current_video_number} - Unavailable video - {id}"
                         file_path = os.path.join(destination_dir, filename)
+
+                        # Don't overwrite dummy file if it already exists
+                        if os.path.exists(file_path):
+                            logging.info(f"    Video ID {id} is unavailable - dummy file already exists.")
+                            continue
+                        else:
+                            logging.info(f"    Video ID {id} is unavailable - saving dummy file '{filename}'")
 
                         # If user wants a clickable shortcut to video recovery tool or not
                         if write_shortcut:
@@ -247,6 +256,9 @@ for i, playlist in enumerate(playlists):
 
                             with open(file_path, "w") as file:
                                 file.write(line) # Write the yt-dlp output
+                    
+                    else:
+                        logging.info(f"    Video ID {id} is unavailable")
 
 
                 elif "archive" in split[-1]:
