@@ -43,7 +43,7 @@ end_user_os = "Windows"
 # If enabled, the script will look for 'cookies.txt' in the same directory of the script
 use_cookies = True
 
-# OPTIONAL: delay (seconds) between downloads
+# OPTIONAL: (recommended if use_cookies enabled) - add a randomized delay between downloads / API hits, and throttle bandwidth, to reduce liklihood of youtube ban
 # VERY IMPORTANT if use_cookies is enabled. Too many downloads can cause a very severe, unfixable account block that can take months to disappear, if it does at all.
 # This is the error you can expect if you ignore this: https://www.reddit.com/r/youtube/comments/1f4n18h/video_unavailable_this_content_isnt_available/
 interdownload_delay = True
