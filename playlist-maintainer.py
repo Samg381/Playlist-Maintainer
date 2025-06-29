@@ -1,8 +1,8 @@
 from datetime import datetime
 from genericpath import isfile
 from zoneinfo import ZoneInfo
+from os.path import exists
 import subprocess
-import platform
 import logging
 import os
 
@@ -41,12 +41,13 @@ end_user_os = "Windows"
 
 # OPTIONAL: use cookies (an account) to access Liked Videos / private / unlisted playlists
 # If enabled, the script will look for 'cookies.txt' in the same directory of the script
+# WARNING: It is strongly recommended to enable ip_api_ban_avoidance below if cookies are enabled.
 use_cookies = False
 
 # OPTIONAL: (recommended, especially if use_cookies enabled) - add a delay between downloads / API hits, and throttle bandwidth, to reduce liklihood of youtube ban
 # VERY IMPORTANT if use_cookies is enabled. Too many downloads can cause a very severe, unfixable account block that can take months to disappear, if it does at all.
 # This is the ban you can expect if you ignore this: https://www.reddit.com/r/youtube/comments/1f4n18h/video_unavailable_this_content_isnt_available/
-interdownload_delay = True
+ip_api_ban_avoidance = True
 
 
 
@@ -94,9 +95,9 @@ if not os.path.exists(destination_root_directory):
 
 logging.info(f"Initialization success!")
 
-logging.info(f"Use cookies: {use_cookies} | Inter-download delay: {interdownload_delay}")
+logging.info(f"Use cookies: {use_cookies} | Inter-download delay: {ip_api_ban_avoidance}")
 
-if use_cookies and not interdownload_delay:
+if use_cookies and not ip_api_ban_avoidance:
     logging.warning(f"You have opted to use cookies WITHOUT enabling interdownload_delay! \nYou may face a ban if the playlist is too long!")
 
 logging.info(f"Initiating maintenance for {len(playlists)} playlists.")
@@ -135,7 +136,7 @@ for i, playlist in enumerate(playlists):
         "--max-sleep-interval", "120",      # Wait up to 90 seconds between videos (randomized with min)
         "--limit-rate", "1M",               # Limit download speed to 1 MiB/s to reduce bandwidth burst
         "--retry-sleep", "fragment:300"     # If a video fragment fails, sleep 5 minutes before retrying
-    ] if interdownload_delay else []
+    ] if ip_api_ban_avoidance else []
 
 
     # Generate yt-dlp command
@@ -218,15 +219,16 @@ for i, playlist in enumerate(playlists):
                     if write_unavailable_videos:
 
                         #dummy_file = destination_dir + "/" + str(current_video_number) + " - Unavailable video - " + id
-                        filename = f"{current_video_number} - Unavailable video - {id}"
+                        filename = f"{current_video_number} - Unavailable video - {id}.url"
                         file_path = os.path.join(destination_dir, filename)
 
                         # Don't overwrite dummy file if it already exists
-                        if os.path.exists(file_path):
+                        if exists(file_path):
                             logging.info(f"    Video ID {id} is unavailable - dummy file already exists.")
                             continue
                         else:
-                            logging.info(f"    Video ID {id} is unavailable - saving dummy file '{filename}'")
+                            # logging.info(f"    Cannot find file path '{file_path}' | exists(file_path) = {exists(file_path)}")
+                            logging.info(f"    Video ID {id} is unavailable - saving dummy file.")
 
                         # If user wants a clickable shortcut to video recovery tool or not
                         if write_shortcut:
